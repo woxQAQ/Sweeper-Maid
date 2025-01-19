@@ -20,7 +20,19 @@ public class SMCommands {
 		return Commands.literal("sweepermaid").then(
 				Commands.literal("dustbin")
 						.requires(stack -> stack.hasPermission(SMCommonConfig.PERMISSION_LEVEL_DUSTBIN.get()))
-						.executes(context -> dustbin(context.getSource().getPlayer())));
+						.executes(context -> dustbin(context.getSource().getPlayer()))).then(
+								Commands.literal("blacklist")
+								.requires(stack -> stack.hasPermission(SMCommonConfig.PERMISSION_LEVEL_DUSTBIN.get()))
+								.executes(context -> blacklist(context.getSource().getPlayer()))
+						);
+	}
+
+	private static int blacklist(@Nullable ServerPlayer player) {
+		if (player == null) {
+			return 0;
+		}
+		player.sendSystemMessage(Component.literal(SMCommonConfig.SWEEP_BLACKLIST.get().toString()));
+		return 1;
 	}
 
 	private static int dustbin(@Nullable ServerPlayer player) {
