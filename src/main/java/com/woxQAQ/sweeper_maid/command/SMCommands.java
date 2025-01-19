@@ -1,7 +1,7 @@
-package com.hexagram2021.sweeper_maid.command;
+package com.woxQAQ.sweeper_maid.command;
 
-import com.hexagram2021.sweeper_maid.config.SMCommonConfig;
-import com.hexagram2021.sweeper_maid.save.SMSavedData;
+import com.woxQAQ.sweeper_maid.config.SMCommonConfig;
+import com.woxQAQ.sweeper_maid.save.SMSavedData;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -18,13 +18,25 @@ import javax.annotation.Nullable;
 public class SMCommands {
 	public static LiteralArgumentBuilder<CommandSourceStack> register() {
 		return Commands.literal("sweepermaid").then(
-				Commands.literal("dustbin").requires(stack -> stack.hasPermission(SMCommonConfig.PERMISSION_LEVEL_DUSTBIN.get()))
-						.executes(context -> dustbin(context.getSource().getPlayer()))
-		);
+				Commands.literal("dustbin")
+						.requires(stack -> stack.hasPermission(SMCommonConfig.PERMISSION_LEVEL_DUSTBIN.get()))
+						.executes(context -> dustbin(context.getSource().getPlayer()))).then(
+								Commands.literal("blacklist")
+								.requires(stack -> stack.hasPermission(SMCommonConfig.PERMISSION_LEVEL_DUSTBIN.get()))
+								.executes(context -> blacklist(context.getSource().getPlayer()))
+						);
+	}
+
+	private static int blacklist(@Nullable ServerPlayer player) {
+		if (player == null) {
+			return 0;
+		}
+		player.sendSystemMessage(Component.literal(SMCommonConfig.SWEEP_BLACKLIST.get().toString()));
+		return 1;
 	}
 
 	private static int dustbin(@Nullable ServerPlayer player) {
-		if(player == null) {
+		if (player == null) {
 			return 0;
 		}
 		player.openMenu(new MenuProvider() {
@@ -32,6 +44,7 @@ public class SMCommands {
 			public Component getDisplayName() {
 				return Component.literal("Dustbin");
 			}
+
 			@Override
 			public AbstractContainerMenu createMenu(int id, Inventory inventory, Player player1) {
 				return ChestMenu.sixRows(id, inventory, SMSavedData.getDustbin());
