@@ -1,7 +1,8 @@
 @FieldsAreNonnullByDefault
 @ParametersAreNonnullByDefault
 @MethodsReturnNonnullByDefault
-package com.hexagram2021.sweeper_maid;
+
+package com.woxQAQ.sweeper_maid.utils;
 
 import net.minecraft.FieldsAreNonnullByDefault;
 import net.minecraft.MethodsReturnNonnullByDefault;

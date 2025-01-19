@@ -1,11 +1,14 @@
-package com.hexagram2021.sweeper_maid;
+package com.woxQAQ.sweeper_maid;
 
 import com.google.common.collect.Lists;
-import com.hexagram2021.sweeper_maid.command.SMCommands;
-import com.hexagram2021.sweeper_maid.config.SMCommonConfig;
-import com.hexagram2021.sweeper_maid.save.SMSavedData;
+import com.woxQAQ.sweeper_maid.command.SMCommands;
+import com.woxQAQ.sweeper_maid.config.SMCommonConfig;
+import com.woxQAQ.sweeper_maid.log.CountDown;
+import com.woxQAQ.sweeper_maid.save.SMSavedData;
+import com.woxQAQ.sweeper_maid.utils.EntityUtils;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.commands.CommandSource;
@@ -16,6 +19,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.Entity;
@@ -36,6 +40,8 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -61,50 +67,55 @@ public class SweeperMaid {
 		dispatcher.register(SMCommands.register());
 	}
 
+	private void onStart() {
+		this.toSweep = true;
+		this.sweepTickRemain = SMCommonConfig.getItemSweepTickRemain();
+	}
+
+	private void broadcastMessage(MinecraftServer server, String message) {
+
+		server.getPlayerList().getPlayers().forEach(player -> {
+			try {
+				player.connection.send(new ClientboundSetActionBarTextPacket(ComponentUtils.updateForEntity(
+						createCommandSourceStack(player, player.level(), player.blockPosition()),
+						Component
+								.literal(message)
+								.withStyle(ChatFormatting.GRAY),
+						player, 0)));
+			} catch (CommandSyntaxException ignored) {
+			}
+		});
+	}
+
 	@SubscribeEvent
 	public void onTick(TickEvent.ServerTickEvent event) {
-		if(SMCommonConfig.ITEM_SWEEP_INTERVAL.get() == 0) {
+		if (SMCommonConfig.ITEM_SWEEP_INTERVAL.get() == 0) {
 			return;
 		}
 		switch (event.phase) {
 			case START -> {
 				this.sweepTickRemain -= 1;
-				if(this.sweepTickRemain <= 0) {
-					this.toSweep = true;
-					this.sweepTickRemain = SMCommonConfig.ITEM_SWEEP_INTERVAL.get() * SharedConstants.TICKS_PER_SECOND;
-				} else if(this.sweepTickRemain == 15 * SharedConstants.TICKS_PER_SECOND || this.sweepTickRemain == 30 * SharedConstants.TICKS_PER_SECOND || this.sweepTickRemain == 60 * SharedConstants.TICKS_PER_SECOND) {
-					event.getServer().getPlayerList().getPlayers().forEach(player -> {
-						try {
-							player.connection.send(new ClientboundSetActionBarTextPacket(ComponentUtils.updateForEntity(
-									createCommandSourceStack(player, player.level(), player.blockPosition()),
-									Component.literal(SMCommonConfig.MESSAGE_BEFORE_SWEEP_15_30_60.get().replaceAll("\\$1", String.valueOf(this.sweepTickRemain / SharedConstants.TICKS_PER_SECOND))).withStyle(ChatFormatting.GRAY),
-									player, 0
-							)));
-						} catch (CommandSyntaxException ignored) {
-						}
-					});
-				} else if(this.sweepTickRemain % SharedConstants.TICKS_PER_SECOND == 0 && this.sweepTickRemain / SharedConstants.TICKS_PER_SECOND <= 10) {
-					event.getServer().getPlayerList().getPlayers().forEach(player -> {
-						try {
-							player.connection.send(new ClientboundSetActionBarTextPacket(ComponentUtils.updateForEntity(
-									createCommandSourceStack(player, player.level(), player.blockPosition()),
-									Component.literal(SMCommonConfig.MESSAGE_BEFORE_SWEEP_1_10.get().replaceAll("\\$1", String.valueOf(this.sweepTickRemain / SharedConstants.TICKS_PER_SECOND))).withStyle(ChatFormatting.GOLD),
-									player, 0
-							)));
-						} catch (CommandSyntaxException ignored) {
-						}
-					});
+				if (this.sweepTickRemain <= 0) {
+					this.onStart();
+					return;
 				}
+				CountDown countDown = new CountDown(this.sweepTickRemain);
+				if (countDown.getMessage().isEmpty()) {
+					return;
+				}
+				broadcastMessage(event.getServer(), countDown.getMessage());
 			}
 			case END -> {
-				SimpleContainer dustbin = SMSavedData.getDustbin();
-				if(this.firstTick) {
+				if (this.firstTick) {
 					this.firstTick = false;
 					this.toSweep = false;
-				} else if(this.toSweep) {
+					return;
+				}
+				if (this.toSweep) {
 					this.toSweep = false;
+					SimpleContainer dustbin = SMSavedData.getDustbin();
 					SimpleContainer oldBin = new SimpleContainer(dustbin.getContainerSize());
-					for(int i = 0; i < dustbin.getContainerSize(); ++i) {
+					for (int i = 0; i < dustbin.getContainerSize(); ++i) {
 						oldBin.setItem(i, dustbin.getItem(i));
 						dustbin.setItem(i, ItemStack.EMPTY);
 					}
@@ -113,16 +124,16 @@ public class SweeperMaid {
 					event.getServer().getAllLevels().forEach(serverLevel -> {
 						Iterable<Entity> entities = serverLevel.getAllEntities();
 						List<Entity> killedEntities = Lists.newArrayList();
-						for(Entity entity: entities) {
-							if(entity instanceof ItemEntity itemEntity) {
+						for (Entity entity : entities) {
+							if (entity instanceof ItemEntity itemEntity && !EntityUtils.inBlacklist(itemEntity)) {
 								dustbin.addItem(itemEntity.getItem());
 								droppedItems.addAndGet(1);
 								killedEntities.add(itemEntity);
-							} else if(entity != null) {
+							} else if (entity != null) {
 								ResourceLocation typeKey = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
 								if (typeKey != null) {
 									String type = typeKey.toString();
-									if(SMCommonConfig.EXTRA_ENTITY_TYPES.get().contains(type)) {
+									if (SMCommonConfig.EXTRA_ENTITY_TYPES.get().contains(type)) {
 										extraEntities.addAndGet(1);
 										killedEntities.add(entity);
 									}
@@ -131,23 +142,18 @@ public class SweeperMaid {
 						}
 						killedEntities.forEach(Entity::kill);
 					});
-					for(int i = 0; i < oldBin.getContainerSize(); ++i) {
+					for (int i = 0; i < oldBin.getContainerSize(); ++i) {
 						dustbin.addItem(oldBin.getItem(i));
 					}
-					event.getServer().getPlayerList().getPlayers().forEach(player -> {
-						try {
-							player.connection.send(new ClientboundSetActionBarTextPacket(ComponentUtils.updateForEntity(
-									createCommandSourceStack(player, player.level(), player.blockPosition()),
-									Component.literal(SMCommonConfig.MESSAGE_AFTER_SWEEP.get().replaceAll("\\$1", droppedItems.toString()).replaceAll("\\$2", extraEntities.toString())).withStyle(ChatFormatting.AQUA),
-									player, 0
-							)));
-						} catch (CommandSyntaxException ignored) {
-						}
-					});
+					broadcastMessage(event.getServer(), SMCommonConfig.getMessageAfterSweep(droppedItems.get(),
+							extraEntities.get()));
 					event.getServer().getPlayerList().broadcastSystemMessage(
-							Component.literal(SMCommonConfig.CHAT_MESSAGE_AFTER_SWEEP.get()).append(Component.literal("/sweepermaid dustbin").withStyle(style ->
-									style.withColor(ChatFormatting.GREEN).withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/sweepermaid dustbin")))), false
-					);
+							Component.literal(SMCommonConfig.CHAT_MESSAGE_AFTER_SWEEP.get())
+									.append(Component.literal("/sweepermaid dustbin")
+											.withStyle(style -> style.withColor(ChatFormatting.GREEN)
+													.withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
+															"/sweepermaid dustbin")))),
+							false);
 					dustbin.setChanged();
 				}
 			}
@@ -159,12 +165,14 @@ public class SweeperMaid {
 		ServerLevel world = event.getServer().getLevel(Level.OVERWORLD);
 		assert world != null;
 		if (!world.isClientSide) {
-			SMSavedData worldData = world.getDataStorage().computeIfAbsent(SMSavedData::new, SMSavedData::new, SMSavedData.SAVED_DATA_NAME);
+			SMSavedData worldData = world.getDataStorage().computeIfAbsent(SMSavedData::new, SMSavedData::new,
+					SMSavedData.SAVED_DATA_NAME);
 			SMSavedData.setInstance(worldData);
 		}
 	}
 
 	private static CommandSourceStack createCommandSourceStack(Player player, Level level, BlockPos blockPos) {
-		return new CommandSourceStack(CommandSource.NULL, Vec3.atCenterOf(blockPos), Vec2.ZERO, (ServerLevel)level, 2, player.getName().getString(), player.getDisplayName(), level.getServer(), player);
+		return new CommandSourceStack(CommandSource.NULL, Vec3.atCenterOf(blockPos), Vec2.ZERO, (ServerLevel) level, 2,
+				player.getName().getString(), player.getDisplayName(), level.getServer(), player);
 	}
 }

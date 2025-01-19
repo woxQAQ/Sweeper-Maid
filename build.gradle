@@ -18,7 +18,7 @@ plugins {
 apply plugin: 'net.minecraftforge.gradle'
 
 version = '1.1.1'
-group = 'com.hexagram2021.sweeper_maid'
+group = 'com.woxQAQ.sweeper_maid'
 
 base {
     archivesName = 'sweeper_maid'
